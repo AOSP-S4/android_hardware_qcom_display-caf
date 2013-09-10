@@ -768,4 +768,3 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
     }
     return status;
 }
-

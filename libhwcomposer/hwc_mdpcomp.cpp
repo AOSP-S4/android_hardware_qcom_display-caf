@@ -762,8 +762,8 @@ int MDPComp::prepare(hwc_context_t *ctx, hwc_display_contents_1_t* list) {
 
     const int numLayers = ctx->listStats[mDpy].numAppLayers;
 
-        //reset old data
-        mCurrentFrame.reset(numLayers);
+    //reset old data
+    mCurrentFrame.reset(numLayers);
 
     //number of app layers exceeds MAX_NUM_APP_LAYERS fall back to GPU
     //do not cache the information for next draw cycle.
@@ -853,9 +853,9 @@ int MDPComp::prepare(hwc_context_t *ctx, hwc_display_contents_1_t* list) {
         return -1;
     }
 
-        //UpdateLayerFlags
-        setMDPCompLayerFlags(ctx, list);
-        mCachedFrame.updateCounts(mCurrentFrame);
+    //UpdateLayerFlags
+    setMDPCompLayerFlags(ctx, list);
+    mCachedFrame.updateCounts(mCurrentFrame);
 
     // unlock it before calling dump function to avoid deadlock
 
