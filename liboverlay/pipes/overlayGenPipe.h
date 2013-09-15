@@ -82,7 +82,7 @@ private:
     /* set Closed pipe */
     bool setClosed();
 
-    int mDpy;
+    int mFbNum;
     /* Ctrl/Data aggregator */
     CtrlData mCtrlData;
     //Whether we will do downscale opt. This is just a request. If the frame is

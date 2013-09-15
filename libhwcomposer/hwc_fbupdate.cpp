@@ -79,20 +79,15 @@ bool FBUpdateLowRes::configure(hwc_context_t *ctx, hwc_display_contents_1 *list,
         ovutils::Whf info(getWidth(hnd), getHeight(hnd),
                           ovutils::getMdpFormat(hnd->format), hnd->size);
 
-        //Request a pipe
-        ovutils::eMdpPipeType type = ovutils::OV_MDP_PIPE_ANY;
-        ovutils::eDest dest = ov.nextPipe(type, mDpy);
+        //Request an RGB pipe
+        ovutils::eDest dest = ov.nextPipe(ovutils::OV_MDP_PIPE_ANY, mDpy);
         if(dest == ovutils::OV_INVALID) { //None available
-            ALOGE("%s: No pipes available to configure fb for dpy %d",
-                __FUNCTION__, mDpy);
+            ALOGE("%s: No pipes available to configure framebuffer",
+                __FUNCTION__);
             return false;
         }
-        mDest = dest;
 
-        if((mDpy && ctx->deviceOrientation) &&
-            ctx->listStats[mDpy].isDisplayAnimating) {
-            fbZorder = 0;
-        }
+        mDest = dest;
 
         ovutils::eMdpFlags mdpFlags = ovutils::OV_MDP_BLEND_FG_PREMULT;
         ovutils::eIsFg isFg = ovutils::IS_FG_OFF;
@@ -101,34 +96,42 @@ bool FBUpdateLowRes::configure(hwc_context_t *ctx, hwc_display_contents_1 *list,
         hwc_rect_t sourceCrop = layer->sourceCrop;
         hwc_rect_t displayFrame = layer->displayFrame;
         int transform = layer->transform;
+        int fbWidth  = ctx->dpyAttr[mDpy].xres;
+        int fbHeight = ctx->dpyAttr[mDpy].yres;
         int rotFlags = ovutils::ROT_FLAGS_NONE;
 
         ovutils::eTransform orient =
                     static_cast<ovutils::eTransform>(transform);
+        if(mDpy && ctx->mExtOrientation) {
+            // If there is a external orientation set, use that
+            transform = ctx->mExtOrientation;
+            orient = static_cast<ovutils::eTransform >(ctx->mExtOrientation);
+        }
 
-        // Do not use getNonWormholeRegion() function to calculate the
-        // sourceCrop during animation on external display and
         // Dont do wormhole calculation when extorientation is set on External
-        if(ctx->listStats[mDpy].isDisplayAnimating && mDpy) {
-            sourceCrop = layer->displayFrame;
-            displayFrame = sourceCrop;
-        } else if((!mDpy || (mDpy && !ctx->mExtOrientation))
+        if((!mDpy || (mDpy && !ctx->mExtOrientation))
                                && extOnlyLayerIndex == -1) {
             getNonWormholeRegion(list, sourceCrop);
             displayFrame = sourceCrop;
         }
+        ovutils::Dim dpos(displayFrame.left,
+                          displayFrame.top,
+                          displayFrame.right - displayFrame.left,
+                          displayFrame.bottom - displayFrame.top);
 
         if(mDpy) {
-            if(ctx->mExtOrientation) {
-                calcExtDisplayPosition(ctx, mDpy, displayFrame);
-                // If there is a external orientation set, use that
-                transform = ctx->mExtOrientation;
-                orient = static_cast<ovutils::eTransform >(ctx->mExtOrientation);
-            }
+            // Get Aspect Ratio for external
+            getAspectRatioPosition(ctx, mDpy, ctx->mExtOrientation, dpos.x,
+                                    dpos.y, dpos.w, dpos.h);
             // Calculate the actionsafe dimensions for External(dpy = 1 or 2)
-            getActionSafePosition(ctx, mDpy, displayFrame);
-       }
-        setMdpFlags(layer, mdpFlags, 0, transform);
+            getActionSafePosition(ctx, mDpy, dpos.x, dpos.y, dpos.w, dpos.h);
+            // Convert dim to hwc_rect_t
+            displayFrame.left = dpos.x;
+            displayFrame.top = dpos.y;
+            displayFrame.right = dpos.w + displayFrame.left;
+            displayFrame.bottom = dpos.h + displayFrame.top;
+        }
+        setMdpFlags(layer, mdpFlags, 0);
         // For External use rotator if there is a rotation value set
         if(mDpy && (ctx->mExtOrientation & HWC_TRANSFORM_ROT_90)) {
             mRot = ctx->mRotMgr->getNext();
@@ -160,7 +163,7 @@ bool FBUpdateLowRes::configure(hwc_context_t *ctx, hwc_display_contents_1 *list,
         ret = true;
         if(configMdp(ctx->mOverlay, parg, orient, sourceCrop, displayFrame,
                     NULL, mDest) < 0) {
-            ALOGE("%s: configMdp failed for dpy %d", __FUNCTION__, mDpy);
+            ALOGE("%s: ConfigMdp failed for low res", __FUNCTION__);
             ret = false;
         }
     }
@@ -214,7 +217,7 @@ bool FBUpdateHighRes::prepare(hwc_context_t *ctx, hwc_display_contents_1 *list,
 
 // Configure
 bool FBUpdateHighRes::configure(hwc_context_t *ctx,
-        hwc_display_contents_1 *list, int fbZorder) {
+                                hwc_display_contents_1 *list, int fbZorder) {
     bool ret = false;
     hwc_layer_1_t *layer = &list->hwLayers[list->numHwLayers - 1];
     if (LIKELY(ctx->mOverlay)) {
@@ -229,18 +232,18 @@ bool FBUpdateHighRes::configure(hwc_context_t *ctx,
         ovutils::Whf info(getWidth(hnd), getHeight(hnd),
                           ovutils::getMdpFormat(hnd->format), hnd->size);
 
-        //Request left pipe
-        ovutils::eDest destL = ov.nextPipe(ovutils::OV_MDP_PIPE_ANY, mDpy);
+        //Request left RGB pipe
+        ovutils::eDest destL = ov.nextPipe(ovutils::OV_MDP_PIPE_RGB, mDpy);
         if(destL == ovutils::OV_INVALID) { //None available
-            ALOGE("%s: No pipes available to configure fb for dpy %d's left"
-                    " mixer", __FUNCTION__, mDpy);
+            ALOGE("%s: No pipes available to configure framebuffer",
+                __FUNCTION__);
             return false;
         }
-        //Request right pipe
-        ovutils::eDest destR = ov.nextPipe(ovutils::OV_MDP_PIPE_ANY, mDpy);
+        //Request right RGB pipe
+        ovutils::eDest destR = ov.nextPipe(ovutils::OV_MDP_PIPE_RGB, mDpy);
         if(destR == ovutils::OV_INVALID) { //None available
-            ALOGE("%s: No pipes available to configure fb for dpy %d's right"
-                    " mixer", __FUNCTION__, mDpy);
+            ALOGE("%s: No pipes available to configure framebuffer",
+                __FUNCTION__);
             return false;
         }
 
@@ -275,12 +278,7 @@ bool FBUpdateHighRes::configure(hwc_context_t *ctx,
 
         hwc_rect_t sourceCrop = layer->sourceCrop;
         hwc_rect_t displayFrame = layer->displayFrame;
-        // Do not use getNonWormholeRegion() function to calculate the
-        // sourceCrop during animation on external display.
-        if(ctx->listStats[mDpy].isDisplayAnimating && mDpy) {
-            sourceCrop = layer->displayFrame;
-            displayFrame = sourceCrop;
-        } else if(extOnlyLayerIndex == -1) {
+        if(extOnlyLayerIndex == -1) {
             getNonWormholeRegion(list, sourceCrop);
             displayFrame = sourceCrop;
         }
